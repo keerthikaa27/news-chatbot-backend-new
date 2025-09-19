@@ -51,7 +51,7 @@ const warmCache = async () => {
     let attempts = 3;
     while (attempts > 0) {
       try {
-        await axios.post('https://news-chatbot-backend-ko8e.onrender.com/chat', {
+        await axios.post(`${process.env.BACKEND_URL}/chat`, {
           message: query,
           sessionId: warmupSessionId
         }, { timeout: 30000 });
@@ -158,6 +158,40 @@ app.delete('/history/:sessionId', async (req, res) => {
     console.error('Session clear error:', err);
     res.status(500).json({ error: 'Failed to clear session' });
   }
+});
+app.get('/sessions', async (req, res) => {
+  try {
+    
+    const keys = await redisClient.keys('session:*');
+    const sessions = [];
+
+    for (const key of keys) {
+      const history = await redisClient.lRange(key, 0, -1);
+      if (history.length > 0) {
+        const parsedHistory = history.map(item => JSON.parse(item));
+        const preview = parsedHistory[0]?.user?.slice(0, 30) || "Untitled chat";
+        sessions.push({
+          id: key.replace('session:', ''),
+          preview
+        });
+      }
+    }
+
+    
+    sessions.sort((a, b) => b.id.localeCompare(a.id));
+
+    res.json({ sessions });
+  } catch (err) {
+    console.error('Error fetching sessions:', err);
+    res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'Backend is running.' });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
 app.listen(PORT, () => {
