@@ -186,6 +186,19 @@ app.get('/sessions', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch sessions' });
   }
 });
+app.delete('/sessions', async (req, res) => {
+  try {
+    const keys = await redisClient.keys('session:*');
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+    }
+    res.json({ message: 'All sessions cleared' });
+  } catch (err) {
+    console.error('Failed to clear all sessions:', err);
+    res.status(500).json({ error: 'Failed to clear all sessions' });
+  }
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Backend is running.' });
 });
