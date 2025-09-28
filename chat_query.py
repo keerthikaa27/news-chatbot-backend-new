@@ -16,11 +16,11 @@ if GEMINI_API_KEY is None:
     sys.stderr.write("Error: GEMINI_API_KEY not set\n")
     sys.exit(1)
 
-#Chroma Connection
+# Chroma Connection
 client = chromadb.Client(Settings(persist_directory=CHROMA_DIR))
 collection = client.get_or_create_collection(name=COLLECTION_NAME)
 
-# --- Retrieve docs from Chroma ---
+# Retrieve docs from Chroma
 def retrieve_docs(query, n_results=5):
     try:
         results = collection.query(query_texts=[query], n_results=n_results, include=["documents", "metadatas"])
@@ -33,14 +33,13 @@ def retrieve_docs(query, n_results=5):
         sys.stderr.write(f"Chroma error: {e}\n")
     return []
 
-#Gemini API 
+# Gemini API
 def call_gemini(query, retrieved_docs):
     # Construct prompt
     prompt_text = (
-        "You are a news assistant. Answer the query using the provided news snippets. "
-        "Cite relevant details from the snippets (e.g., 'Snippet 1 reported...'). "
-        "If snippets are insufficient or unrelated, supplement with a concise summary based on your knowledge up to September 2025. "
-        "Keep the answer engaging, factual, and under 200 words.\n\n"
+        "You are a smart news assistant. Answer the query using the provided news till latest 2025. And if they don't ask news query, give a related answer to their query. "
+        "If snippets are insufficient or unrelated, supplement with a concise summary based on your knowledge up to the latest September 2025. "
+        "Keep the answer engaging, factual, latest till date.\n\n"
     )
     if retrieved_docs:
         prompt_text += "News Snippets:\n"
@@ -50,7 +49,8 @@ def call_gemini(query, retrieved_docs):
         prompt_text += f"No relevant snippets found for '{query}'. Provide a general summary of recent developments.\n"
     prompt_text += f"\nQuery: {query}\nAnswer:"
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # Updated model name to gemini-2.5-flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": prompt_text}]}]
@@ -70,20 +70,18 @@ def call_gemini(query, retrieved_docs):
         except requests.exceptions.HTTPError as e:
             sys.stderr.write(f"Gemini HTTP error: {e}\nStatus: {response.status_code}\nResponse: {response.text}\n")
             if response.status_code == 503:
-            return f"Error: Service temporarily unavailable. Try again soon."
-            if response.status_code == 503:
                 sys.stderr.write(f"Attempt {attempt}/{MAX_RETRIES}: 503 overload, retrying in {delay}s...\n")
                 if attempt < MAX_RETRIES:
                     time.sleep(delay)
                     delay *= 2
                     continue
-            sys.stderr.write(f"Gemini HTTP error: {e}\nResponse: {response.text}\n")
-            return f"Error: Service temporarily unavailable. Try again soon."
+                return "Sorry, the news service is temporarily unavailable due to server overload. Please try again later."
+            return "Sorry, I couldn't fetch the latest news. Please try again later."
         except Exception as e:
             sys.stderr.write(f"Gemini request failed: {traceback.format_exc()}\n")
-            return "Error connecting to Gemini."
+            return "Sorry, I couldn't connect to the news service. Please try again later."
 
-#Main CLI
+# Main CLI
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(1)
