@@ -10,7 +10,7 @@ CHROMA_DIR = os.getenv("CHROMA_DIR", "chroma_store")
 COLLECTION_NAME = "news_articles"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MAX_RETRIES = 3
-RETRY_DELAY = 5  # Start with 5s, exponential backoff
+RETRY_DELAY = 5  
 
 if GEMINI_API_KEY is None:
     sys.stderr.write("Error: GEMINI_API_KEY not set\n")
@@ -68,6 +68,9 @@ def call_gemini(query, retrieved_docs):
                 sys.stderr.write(f"Unexpected Gemini response: {data}\n")
                 return "No valid response from Gemini."
         except requests.exceptions.HTTPError as e:
+            sys.stderr.write(f"Gemini HTTP error: {e}\nStatus: {response.status_code}\nResponse: {response.text}\n")
+            if response.status_code == 503:
+            return f"Error: Service temporarily unavailable. Try again soon."
             if response.status_code == 503:
                 sys.stderr.write(f"Attempt {attempt}/{MAX_RETRIES}: 503 overload, retrying in {delay}s...\n")
                 if attempt < MAX_RETRIES:
