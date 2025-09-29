@@ -11,6 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const CHROMA_DIR = process.env.CHROMA_DIR || './chroma_store';
 const CSV_FILE = process.env.CSV_FILE || 'train.csv';
+
+// Run embed_store.py if chroma dir doesn't exist
 if (!fs.existsSync(CHROMA_DIR)) {
   console.log(`${CHROMA_DIR} not found. Running embed_store.py...`);
   const embed = spawn('python', ['embed_store.py'], {
@@ -86,7 +88,27 @@ const warmCache = async () => {
   }
 })();
 
-// Routes
+// ✅ Headlines route (proxy NewsAPI)
+app.get('/api/headlines', async (req, res) => {
+  try {
+    const category = req.query.category || "general";
+    const url = `https://newsapi.org/v2/top-headlines?country=us&category=${category}&apiKey=${process.env.NEWS_API_KEY}`;
+    
+    const response = await axios.get(url);
+    const headlines = response.data.articles.map(article => ({
+      title: article.title,
+      description: article.description,
+      url: article.url
+    }));
+
+    res.json({ headlines });
+  } catch (err) {
+    console.error('News API error:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Failed to fetch headlines' });
+  }
+});
+
+// Chat route
 app.post('/chat', async (req, res) => {
   const { sessionId, message } = req.body;
 
@@ -159,9 +181,9 @@ app.delete('/history/:sessionId', async (req, res) => {
     res.status(500).json({ error: 'Failed to clear session' });
   }
 });
+
 app.get('/sessions', async (req, res) => {
   try {
-    
     const keys = await redisClient.keys('session:*');
     const sessions = [];
 
@@ -177,15 +199,14 @@ app.get('/sessions', async (req, res) => {
       }
     }
 
-    
     sessions.sort((a, b) => b.id.localeCompare(a.id));
-
     res.json({ sessions });
   } catch (err) {
     console.error('Error fetching sessions:', err);
     res.status(500).json({ error: 'Failed to fetch sessions' });
   }
 });
+
 app.delete('/sessions', async (req, res) => {
   try {
     const keys = await redisClient.keys('session:*');
