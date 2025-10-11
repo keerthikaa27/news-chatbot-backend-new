@@ -33,7 +33,7 @@ if (!fs.existsSync(CHROMA_DIR)) {
 }
 
 app.use(cors({
-  origin: ['https://news-chatbot-frontend-e592.onrender.com', 'http://localhost:3000'],
+  origin: ['https://news-chatbot-frontend-e592.onrender.com', 'https://newsify-newschatbot.netlify.app/', 'http://localhost:3000'],
   credentials: true
 }));
 app.use(bodyParser.json());
@@ -88,7 +88,7 @@ const warmCache = async () => {
   }
 })();
 
-// ✅ Headlines route (proxy NewsAPI)
+// Headlines route (proxy NewsAPI)
 app.get('/api/headlines', async (req, res) => {
   try {
     const category = req.query.category || "general";
