@@ -5,19 +5,42 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const redis = require('redis');
 const axios = require('axios');
-require('dotenv').config();
+const dotenv = require('dotenv');
+dotenv.config({ path: './.env.example' });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const CHROMA_DIR = process.env.CHROMA_DIR || './chroma_store';
 const CSV_FILE = process.env.CSV_FILE || 'train.csv';
 
+// Log environment variables for debugging (excluding sensitive keys)
+console.log('Environment Variables:', {
+  PORT: process.env.PORT,
+  CHROMA_DIR: process.env.CHROMA_DIR,
+  CSV_FILE: process.env.CSV_FILE,
+  COLLECTION_NAME: process.env.COLLECTION_NAME,
+  BATCH_SIZE: process.env.BATCH_SIZE,
+  START_ROW: process.env.START_ROW,
+  REDIS_URL: process.env.REDIS_URL ? '[set]' : '[not set]',
+  BACKEND_URL: process.env.BACKEND_URL,
+  NEWS_API_KEY: process.env.NEWS_API_KEY ? '[set]' : '[not set]',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY ? '[set]' : '[not set]'
+});
+
 // Run embed_store.py if chroma dir doesn't exist
 if (!fs.existsSync(CHROMA_DIR)) {
   console.log(`${CHROMA_DIR} not found. Running embed_store.py...`);
   const embed = spawn('python', ['embed_store.py'], {
     cwd: __dirname,
-    env: { ...process.env, CHROMA_DIR, CSV_FILE, COLLECTION_NAME: process.env.COLLECTION_NAME, BATCH_SIZE: process.env.BATCH_SIZE, START_ROW: process.env.START_ROW }
+    env: { 
+      ...process.env, 
+      CHROMA_DIR, 
+      CSV_FILE, 
+      COLLECTION_NAME: process.env.COLLECTION_NAME, 
+      BATCH_SIZE: process.env.BATCH_SIZE, 
+      START_ROW: process.env.START_ROW,
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY
+    }
   });
 
   embed.stdout.on('data', (data) => console.log(`Embed stdout: ${data}`));
@@ -33,10 +56,36 @@ if (!fs.existsSync(CHROMA_DIR)) {
 }
 
 app.use(cors({
-  origin: ['https://news-chatbot-frontend-e592.onrender.com', 'https://newsify-newschatbot.netlify.app/', 'http://localhost:3000'],
+  origin: '*', // Allow all origins for debugging
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-Requested-With'],
   credentials: true
 }));
+app.use((req, res, next) => {
+  console.log('CORS Middleware: Setting headers for', req.method, req.url);
+  console.log('Request Origin:', req.headers.origin);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS request for', req.url);
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 app.use(bodyParser.json());
+
+// Debug middleware to log headers
+app.use((req, res, next) => {
+  console.log('Request Headers:', req.headers);
+  console.log('Response Headers (before route):', res.getHeaders());
+  res.on('finish', () => {
+    console.log('Response Headers (after route):', res.getHeaders());
+  });
+  next();
+});
 
 // Redis client
 const redisClient = redis.createClient({
@@ -48,12 +97,14 @@ const warmCache = async () => {
   const queries = ["latest news on india", "india economy"];
   const warmupSessionId = "warmup-" + Date.now();
   console.log('Starting cache warming...');
+  const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+  console.log('Using BACKEND_URL:', backendUrl);
 
   for (const query of queries) {
     let attempts = 3;
     while (attempts > 0) {
       try {
-        await axios.post(`${process.env.BACKEND_URL}/chat`, {
+        await axios.post(`${backendUrl}/chat`, {
           message: query,
           sessionId: warmupSessionId
         }, { timeout: 30000 });
@@ -116,10 +167,20 @@ app.post('/chat', async (req, res) => {
     return res.status(400).json({ error: 'sessionId and message are required' });
   }
 
+  if (!process.env.GEMINI_API_KEY) {
+    console.error('GEMINI_API_KEY is not set in environment');
+    return res.status(500).json({ error: 'Server configuration error: GEMINI_API_KEY not set' });
+  }
+
   try {
     const python = spawn('python', ['chat_query.py', message.trim()], {
       cwd: __dirname,
-      env: { ...process.env, GEMINI_API_KEY: process.env.GEMINI_API_KEY, CHROMA_DIR, COLLECTION_NAME: process.env.COLLECTION_NAME }
+      env: { 
+        ...process.env, 
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+        CHROMA_DIR,
+        COLLECTION_NAME: process.env.COLLECTION_NAME
+      }
     });
 
     let output = '';
